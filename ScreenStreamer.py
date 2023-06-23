@@ -11,7 +11,7 @@ class ScreenStreamer:
     def __init__(self, scale=0.2, fps_limit=30, monitor=None, url=None, stream_id=None):
         self.scale = scale
         self.fps_limit = fps_limit
-        self.monitor = mss.mss().monitors[0] if monitor is None else monitor
+        self.monitor = monitor or mss.mss().monitors[0]
         self.top_grab = {
             'left': 0,
             'top': 0,
@@ -27,42 +27,18 @@ class ScreenStreamer:
         self.queue_top = Queue(maxsize=3)
         self.queue_down = Queue(maxsize=3)
         self.is_running = Value('i', 1)
-        self.p1 = None
-        self.p2 = None
-        self.p3 = None
         self.display = True
         self.url = url
         self.stream_id = stream_id
 
-    def grabber_top(self):
+    def grab_frame(self, queue, grab_area):
         with mss.mss() as sct:
             while self.is_running.value:
-                pre_frame = np.array(sct.grab(self.top_grab))
-                pre_frame = cv2.resize(
-                    pre_frame,
-                    dsize=(
-                        round(self.top_grab['width'] * self.scale),
-                        round(self.top_grab['height'] * self.scale)
-                    ),
-                    interpolation=cv2.INTER_NEAREST
-                )
-                self.queue_top.put(pre_frame)
-        print('Top Grabber Finished!')
-
-    def grabber_down(self):
-        with mss.mss() as sct:
-            while self.is_running.value:
-                pre_frame = np.array(sct.grab(self.down_grab))
-                pre_frame = cv2.resize(
-                    pre_frame,
-                    dsize=(
-                        round(self.down_grab['width'] * self.scale),
-                        round(self.down_grab['height'] * self.scale)
-                    ),
-                    interpolation=cv2.INTER_NEAREST
-                )
-                self.queue_down.put(pre_frame)
-        print('Down Grabber Finished!')
+                pre_frame = np.array(sct.grab(grab_area))
+                pre_frame = cv2.resize(pre_frame, None, fx=self.scale, fy=self.scale,
+                                       interpolation=cv2.INTER_NEAREST)
+                queue.put(pre_frame)
+        print('Grabber Finished!')
 
     def displayer(self):
         top_frame = None
@@ -101,24 +77,7 @@ class ScreenStreamer:
 
         print('Displayer Finished!')
 
-    def getFrame(self, asBytes=True):
-        self.display = False
-        self.start()
-        top_frame = None
-        down_frame = None
-        frame = None
-
-        top_frame = self.queue_top.get()
-        down_frame = self.queue_down.get()
-
-        frame = np.concatenate((top_frame, down_frame), axis=0)
-        if asBytes:
-            ret, buffer = cv2.imencode('.jpg', frame)
-            frame = buffer.tobytes()
-        self.stop()
-        return frame
-
-    def streamer(self):
+    def send_frame(self):
         top_frame = None
         down_frame = None
 
@@ -138,34 +97,36 @@ class ScreenStreamer:
                     continue
 
     def start(self):
-        p1 = Process(target=self.grabber_top)
-        p2 = Process(target=self.grabber_down)
+        p1 = Process(target=self.grab_frame, args=(self.queue_top, self.top_grab))
+        p2 = Process(target=self.grab_frame, args=(self.queue_down, self.down_grab))
         p1.start()
         p2.start()
+        p3 = None
         if self.display:
             p3 = Process(target=self.displayer)
-            p3.start()
         elif self.url is not None and self.stream_id is not None:
-            p3 = Process(target=self.streamer)
-            p3.start()
+            p3 = Process(target=self.send_frame)
         else:
-            raise Exception("display option or Url and stream id should be set.")
+            raise Exception("The 'display' option or the 'url' and 'stream_id' should be set.")
+
+        if p3:
+            p3.start()
+        while self.is_running.value:
+            time.sleep(1)
+        self.stop()
+        p1.terminate()
+        p2.terminate()
+        if p3:
+            p3.terminate()
 
     def stop(self):
         self.is_running.value = 0
-        if self.p1:
-            self.p1.terminate()
-        if self.p2:
-            self.p2.terminate()
-        if self.p3:
-            self.p3.terminate()
         print('All processes terminated!')
 
 
 if __name__ == "__main__":
-    streamer = ScreenStreamer(scale=1, fps_limit=999)
+    streamer = ScreenStreamer(scale=0.5, fps_limit=60)
     streamer.display = True
     streamer.start()
     while streamer.is_running.value:
         time.sleep(1)
-    streamer.stop()
