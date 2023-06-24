@@ -5,10 +5,12 @@ from fastapi.templating import Jinja2Templates
 from fastapi_frame_stream import FrameStreamer
 
 from ScreenStreamer import ScreenStreamer
+from WindowFinder import getWindowMonitor
 
+monitor = getWindowMonitor("Albion Online Client")
 url = "127.0.0.1:8000"
 stream_id = "test_stream"
-streamer = ScreenStreamer(scale=0.15, fps_limit=15, url=url, stream_id=stream_id)
+streamer = ScreenStreamer(scale=0.5, fps_limit=15, url=url, stream_id=stream_id, monitor=monitor)
 streamer.display = False
 
 fs = FrameStreamer()

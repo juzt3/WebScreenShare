@@ -13,14 +13,14 @@ class ScreenStreamer:
         self.fps_limit = fps_limit
         self.monitor = monitor or mss.mss().monitors[0]
         self.top_grab = {
-            'left': 0,
-            'top': 0,
+            'left': self.monitor['left'],
+            'top': self.monitor['top'],
             'width': self.monitor['width'],
             'height': round(self.monitor['height'] / 2)
         }
         self.down_grab = {
-            'left': 0,
-            'top': round(self.monitor['height'] / 2),
+            'left': self.monitor['left'],
+            'top': self.monitor['top'] + round(self.monitor['height'] / 2),
             'width': self.monitor['width'],
             'height': round(self.monitor['height'] / 2)
         }
@@ -59,9 +59,10 @@ class ScreenStreamer:
 
                 try:
                     fps = 1 / (time.time() - last_time)
-                    while fps > self.fps_limit:
-                        fps = 1 / (time.time() - last_time)
-                        time.sleep(0.001)
+                    if fps > self.fps_limit:
+                        sleep_time = max(0, 1 / self.fps_limit - (time.time() - last_time))
+                        time.sleep(sleep_time)
+                    fps = 1 / (time.time() - last_time)
                     sum_fps += fps
                     num_fps += 1
                     avg_fps = sum_fps / num_fps
@@ -88,9 +89,9 @@ class ScreenStreamer:
             if top_frame is not None and down_frame is not None:
                 try:
                     fps = 1 / (time.time() - last_time)
-                    while fps > self.fps_limit:
-                        fps = 1 / (time.time() - last_time)
-                        time.sleep(0.01)
+                    if fps > self.fps_limit:
+                        sleep_time = max(0, 1 / self.fps_limit - (time.time() - last_time))
+                        time.sleep(sleep_time)
                 except ZeroDivisionError:
                     continue
                 full_frame = np.concatenate((top_frame, down_frame), axis=0)
@@ -126,7 +127,9 @@ class ScreenStreamer:
 
 
 if __name__ == "__main__":
-    streamer = ScreenStreamer(scale=0.5, fps_limit=64)
+    from WindowFinder import getWindowMonitor
+    monitor = getWindowMonitor("Albion Online Client")
+    streamer = ScreenStreamer(scale=0.5, fps_limit=15, monitor=monitor)
     streamer.display = True
     streamer.start()
     while streamer.is_running.value:
