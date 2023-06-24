@@ -6,7 +6,7 @@ from fastapi_frame_stream import FrameStreamer
 
 from ScreenStreamer import ScreenStreamer
 
-url = "127.0.0.1:8888"
+url = "127.0.0.1:8000"
 stream_id = "test_stream"
 streamer = ScreenStreamer(scale=0.25, fps_limit=15, url=url, stream_id=stream_id)
 streamer.display = False
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     streamer.start()
     uvicorn.run(
         "main:app",
-        port=8888,
+        port=8000,
         reload=True,
         log_level="debug",
         workers=2

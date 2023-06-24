@@ -87,7 +87,7 @@ class ScreenStreamer:
 
             if top_frame is not None and down_frame is not None:
                 full_frame = np.concatenate((top_frame, down_frame), axis=0)
-                _, buffer = cv2.imencode('.jpg', full_frame)
+                _, buffer = cv2.imencode('.jpg', full_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 base64str = base64.b64encode(buffer).decode("utf-8")
                 uri = "http://"+self.url+"/send_frame_from_string/"+self.stream_id
                 json_str = f'{{"img_base64str": "{base64str}"}}'
@@ -95,13 +95,14 @@ class ScreenStreamer:
                     requests.post(uri, json_str)
                 except ConnectionError:
                     continue
+                except:
+                    continue
 
     def start(self):
         p1 = Process(target=self.grab_frame, args=(self.queue_top, self.top_grab))
         p2 = Process(target=self.grab_frame, args=(self.queue_down, self.down_grab))
         p1.start()
         p2.start()
-        p3 = None
         if self.display:
             p3 = Process(target=self.displayer)
         elif self.url is not None and self.stream_id is not None:
@@ -111,13 +112,6 @@ class ScreenStreamer:
 
         if p3:
             p3.start()
-        while self.is_running.value:
-            time.sleep(1)
-        self.stop()
-        p1.terminate()
-        p2.terminate()
-        if p3:
-            p3.terminate()
 
     def stop(self):
         self.is_running.value = 0
