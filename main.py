@@ -8,7 +8,7 @@ from ScreenStreamer import ScreenStreamer
 
 url = "127.0.0.1:8000"
 stream_id = "test_stream"
-streamer = ScreenStreamer(scale=0.25, fps_limit=15, url=url, stream_id=stream_id)
+streamer = ScreenStreamer(scale=0.15, fps_limit=15, url=url, stream_id=stream_id)
 streamer.display = False
 
 fs = FrameStreamer()
@@ -47,7 +47,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         port=8000,
-        reload=True,
-        log_level="debug",
-        workers=2
+        reload=False,
+        log_level="critical",
     )

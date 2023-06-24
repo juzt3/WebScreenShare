@@ -82,10 +82,18 @@ class ScreenStreamer:
         down_frame = None
 
         while self.is_running.value:
+            last_time = time.time()
             top_frame = self.queue_top.get_nowait() if not self.queue_top.empty() else top_frame
             down_frame = self.queue_down.get_nowait() if not self.queue_down.empty() else down_frame
 
             if top_frame is not None and down_frame is not None:
+                try:
+                    fps = 1 / (time.time() - last_time)
+                    while fps > self.fps_limit:
+                        fps = 1 / (time.time() - last_time)
+                        time.sleep(0.01)
+                except ZeroDivisionError:
+                    continue
                 full_frame = np.concatenate((top_frame, down_frame), axis=0)
                 _, buffer = cv2.imencode('.jpg', full_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 base64str = base64.b64encode(buffer).decode("utf-8")
