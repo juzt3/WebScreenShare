@@ -55,7 +55,7 @@ class ScreenStreamer:
 
             if top_frame is not None and down_frame is not None:
                 full_frame = np.concatenate((top_frame, down_frame), axis=0)
-                cv2.imshow("OpenCV/Numpy normal", full_frame)
+                cv2.imshow("Frame", full_frame)
 
                 try:
                     fps = 1 / (time.time() - last_time)
@@ -65,9 +65,8 @@ class ScreenStreamer:
                     sum_fps += fps
                     num_fps += 1
                     avg_fps = sum_fps / num_fps
-                    print(f"Avg Fps: {avg_fps}")
                     max_fps = max(fps, max_fps)
-                    print(f"Max Fps: {max_fps}")
+                    cv2.setWindowTitle("Frame", f"Avg FPS: {avg_fps} | Max FPS: {max_fps}")
                 except ZeroDivisionError:
                     continue
 
@@ -127,7 +126,7 @@ class ScreenStreamer:
 
 
 if __name__ == "__main__":
-    streamer = ScreenStreamer(scale=0.5, fps_limit=60)
+    streamer = ScreenStreamer(scale=0.5, fps_limit=64)
     streamer.display = True
     streamer.start()
     while streamer.is_running.value:
