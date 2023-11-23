@@ -1,17 +1,22 @@
-import uvicorn
 from pydantic import BaseModel
 from fastapi import FastAPI, Request, File, UploadFile
 from fastapi.templating import Jinja2Templates
 from fastapi_frame_stream import FrameStreamer
-
-from ScreenStreamer import ScreenStreamer
+from hypercorn.config import Config
+from hypercorn.asyncio import serve
+import asyncio
+import mss
+from ScreenStreamerThreaded import ScreenStreamer
 from WindowFinder import getWindowMonitor
 
-monitor = getWindowMonitor("Albion Online Client")
+# monitor = getWindowMonitor("Albion Online Client")
+monitor = mss.mss().monitors[1]
 url = "127.0.0.1:8000"
 stream_id = "test_stream"
-streamer = ScreenStreamer(scale=0.5, fps_limit=15, url=url, stream_id=stream_id, monitor=monitor)
+fps = 5
+streamer = ScreenStreamer(scale=0.5, fps_limit=fps, url=url, stream_id=stream_id, monitor=monitor)
 streamer.display = False
+streamer.singleThread = False
 
 fs = FrameStreamer()
 
@@ -41,14 +46,12 @@ async def send_frame_from_file(stream_id: str, file: UploadFile = File(...)):
 
 @app.get("/video_feed/{stream_id}")
 async def video_feed(stream_id: str):
-    return fs.get_stream(stream_id)
+    return fs.get_stream(stream_id, freq=fps)
 
 
 if __name__ == "__main__":
     streamer.start()
-    uvicorn.run(
-        "main:app",
-        port=8000,
-        reload=False,
-        log_level="critical",
-    )
+    config = Config()
+    config.bind = ["0.0.0.0:8000"]
+
+    asyncio.run(serve(app, config))

@@ -2,13 +2,23 @@ import cv2
 import numpy as np
 import time
 import mss
-from multiprocessing import Process, Queue, Value
+import threading
 import base64
 import requests
+from queue import Queue
+from concurrent.futures import ThreadPoolExecutor
+from ctypes import windll
 
 
-class ScreenStreamer:
+def psleep(num: int):
+    windll.winmm.timeBeginPeriod(1)
+    windll.kernel32.Sleep(int(num))
+    windll.winmm.timeEndPeriod(1)
+
+
+class ScreenStreamer(threading.Thread):
     def __init__(self, scale=0.2, fps_limit=30, monitor=None, url=None, stream_id=None):
+        threading.Thread.__init__(self)
         self.scale = scale
         self.fps_limit = fps_limit
         self.monitor = monitor or mss.mss().monitors[0]
@@ -26,16 +36,17 @@ class ScreenStreamer:
         }
         self.queue_top = Queue(maxsize=1)
         self.queue_down = Queue(maxsize=1)
-        self.is_running = Value('i', 1)
+        self.is_running = True
         self.display = True
-        self.singleProcess = False
+        self.singleThread = False
         self.url = url
         self.stream_id = stream_id
 
     def grab_frame(self, queue, grab_area):
         with mss.mss() as sct:
-            while self.is_running.value:
+            while self.is_running:
                 last_time = time.time()
+
                 pre_frame = np.array(sct.grab(grab_area))
                 pre_frame = cv2.resize(pre_frame, None, fx=self.scale, fy=self.scale,
                                        interpolation=cv2.INTER_NEAREST)
@@ -45,7 +56,7 @@ class ScreenStreamer:
                     fps = 1 / (time.time() - last_time)
                     if fps > self.fps_limit:
                         sleep_time = max(0, 1 / self.fps_limit - (time.time() - last_time))
-                        time.sleep(sleep_time)
+                        psleep(sleep_time*1000)
                 except ZeroDivisionError:
                     continue
         print('Grabber Finished!')
@@ -57,10 +68,10 @@ class ScreenStreamer:
         num_fps = 0
         sum_fps = 0
 
-        while self.is_running.value:
+        while self.is_running:
             last_time = time.time()
 
-            if self.singleProcess:
+            if self.singleThread:
                 full_frame = self.queue_top.get_nowait() if not self.queue_top.empty() else top_frame
                 if full_frame is not None:
                     cv2.imshow("Frame", full_frame)
@@ -69,7 +80,7 @@ class ScreenStreamer:
                         fps = 1 / (time.time() - last_time)
                         if fps > self.fps_limit:
                             sleep_time = max(0, 1 / self.fps_limit - (time.time() - last_time))
-                            time.sleep(sleep_time)
+                            psleep(sleep_time*1000)
                         fps = 1 / (time.time() - last_time)
                         sum_fps += fps
                         num_fps += 1
@@ -91,7 +102,7 @@ class ScreenStreamer:
                         fps = 1 / (time.time() - last_time)
                         if fps > self.fps_limit:
                             sleep_time = max(0, 1 / self.fps_limit - (time.time() - last_time))
-                            time.sleep(sleep_time)
+                            psleep(sleep_time*1000)
                         fps = 1 / (time.time() - last_time)
                         sum_fps += fps
                         num_fps += 1
@@ -103,7 +114,7 @@ class ScreenStreamer:
 
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 cv2.destroyAllWindows()
-                self.is_running.value = 0
+                self.is_running = False
 
         print('Displayer Finished!')
 
@@ -111,21 +122,22 @@ class ScreenStreamer:
         top_frame = None
         down_frame = None
 
-        while self.is_running.value:
+        while self.is_running:
             last_time = time.time()
 
-            if self.singleProcess:
+            if self.singleThread:
                 full_frame = self.queue_top.get_nowait() if not self.queue_top.empty() else top_frame
                 if full_frame is not None:
                     try:
                         fps = 1 / (time.time() - last_time)
                         if fps > self.fps_limit:
                             sleep_time = max(0, 1 / self.fps_limit - (time.time() - last_time))
-                            time.sleep(sleep_time)
+                            psleep(sleep_time*1000)
                     except ZeroDivisionError:
                         continue
 
-                    _, buffer = cv2.imencode('.jpg', full_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    _, buffer = cv2.imencode('.webp', full_frame, [cv2.IMWRITE_WEBP_QUALITY, 75])
+
                     base64str = base64.b64encode(buffer).decode("utf-8")
                     uri = "http://" + self.url + "/send_frame_from_string/" + self.stream_id
                     json_str = f'{{"img_base64str": "{base64str}"}}'
@@ -142,11 +154,11 @@ class ScreenStreamer:
                         fps = 1 / (time.time() - last_time)
                         if fps > self.fps_limit:
                             sleep_time = max(0, 1 / self.fps_limit - (time.time() - last_time))
-                            time.sleep(sleep_time)
+                            psleep(sleep_time*1000)
                     except ZeroDivisionError:
                         continue
                     full_frame = np.concatenate((top_frame, down_frame), axis=0)
-                    _, buffer = cv2.imencode('.jpg', full_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    _, buffer = cv2.imencode('.webp', full_frame, [cv2.IMWRITE_WEBP_QUALITY, 75])
                     base64str = base64.b64encode(buffer).decode("utf-8")
                     uri = "http://"+self.url+"/send_frame_from_string/"+self.stream_id
                     json_str = f'{{"img_base64str": "{base64str}"}}'
@@ -155,29 +167,33 @@ class ScreenStreamer:
                     except:
                         continue
 
-    def start(self):
-        if self.singleProcess:
-            p1 = Process(target=self.grab_frame, args=(self.queue_top, self.monitor))
-            p1.start()
+    def run(self):
+        if self.singleThread:
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                t1 = executor.submit(self.grab_frame, self.queue_top, self.monitor)
+                if self.display:
+                    t2 = executor.submit(self.displayer)
+                    t2.result()
+                if self.url is not None and self.stream_id is not None:
+                    t3 = executor.submit(self.send_frame)
+                    t3.result()
+                t1.result()
         else:
-            p1 = Process(target=self.grab_frame, args=(self.queue_top, self.top_grab))
-            p2 = Process(target=self.grab_frame, args=(self.queue_down, self.down_grab))
-            p1.start()
-            p2.start()
-
-        if self.display:
-            p3 = Process(target=self.displayer)
-        elif self.url is not None and self.stream_id is not None:
-            p3 = Process(target=self.send_frame)
-        else:
-            raise Exception("The 'display' option or the 'url' and 'stream_id' should be set.")
-
-        if p3:
-            p3.start()
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                t1 = executor.submit(self.grab_frame, self.queue_top, self.top_grab)
+                t2 = executor.submit(self.grab_frame, self.queue_down, self.down_grab)
+                if self.display:
+                    t3 = executor.submit(self.displayer)
+                    t3.result()
+                if self.url is not None and self.stream_id is not None:
+                    t4 = executor.submit(self.send_frame)
+                    t4.result()
+                t1.result()
+                t2.result()
 
     def stop(self):
-        self.is_running.value = 0
-        print('All processes terminated!')
+        self.is_running = False
+        print('All threads terminated!')
 
 
 if __name__ == "__main__":
@@ -187,5 +203,5 @@ if __name__ == "__main__":
     streamer.display = True
     streamer.singleProcess = True
     streamer.start()
-    while streamer.is_running.value:
-        time.sleep(1)
+    while streamer.is_running:
+        psleep(1000)

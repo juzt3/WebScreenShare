@@ -5,7 +5,7 @@ import win32con
 def getWindowMonitor(window_text):
     window_text = find_main_window(window_text)
     hw = win32gui.FindWindow(None, window_text)
-    win32gui.SetForegroundWindow(hw)
+    # win32gui.SetForegroundWindow(hw)
     win32gui.ShowWindow(hw, win32con.SW_NORMAL)
     clientRect = win32gui.GetClientRect(hw)
 
